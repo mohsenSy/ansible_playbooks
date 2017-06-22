@@ -1,0 +1,79 @@
+---
+  - hosts: 127.0.0.1
+    connection: local
+    gather_facts: False
+
+    vars:
+      - ins: c
+      - ins_name: test_server
+      - image_name: Ubuntu16.04
+
+    tasks:
+      - name: install pip
+        become: True
+        apt:
+          name: python-pip
+          state: present
+      - name: Install shade
+        become: True
+        pip:
+          name: shade
+          state: present
+      - name: create network
+        os_network:
+          cloud: trystack
+          name: test_net
+        when: ins == "c"
+      - name: Create subnet
+        os_subnet:
+          cloud: trystack
+          name: test_sub
+          network_name: test_net
+          state: present
+          cidr: 10.0.0.0/24
+          allocation_pool_start: 10.0.0.10
+          allocation_pool_end: 10.0.0.100
+          dns_nameservers: 8.8.8.8
+        when: ins == "c"
+      - name: Create router
+        os_router:
+          cloud: trystack
+          name: test_router
+          interfaces: test_sub
+          network: public
+        when: ins == "c"
+      - name: Create keypair
+        os_keypair:
+          cloud: trystack
+          name: trystack_key
+          public_key_file: "{{ lookup('env','HOME') }}/.ssh/id_rsa.pub"
+      - name: Create openstack instance
+        os_server:
+          cloud: trystack
+          name: "{{ ins_name }}"
+          image: "{{ image_name }}"
+          flavor: m1.small
+          state: present
+          key_name: trystack_key
+          userdata: |
+            #cloud-config
+            packages:
+              - python
+        register: server_config
+        when: ins == "c"
+      - name: Delete openstack instance
+        os_server:
+          cloud: trystack
+          name: "{{ ins_name }}"
+          delete_fip: True
+          state: absent
+        when: ins == "d"
+      - name: update /etc/hosts with new ip
+      # FIXME This could create multiple trystack entries in /etc/hosts will be fixed soon.
+        become: True
+        lineinfile:
+          dest: /etc/hosts
+          regexp: ".*{{ server_config.openstack.accessIPv4 }} trystack$"
+          line: "{{ server_config.openstack.accessIPv4 }} trystack"
+          state: present
+        when: ins == "c"
