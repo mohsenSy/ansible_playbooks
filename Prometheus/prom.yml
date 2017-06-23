@@ -1,0 +1,27 @@
+---
+  - hosts: prom_server
+    gather_facts: False
+
+    vars:
+      - PROM_VERSION: 1.7.1
+
+    tasks:
+      - name: Create dir for downloaded file and prometheus
+        become: True
+        file:
+          name: "/opt/{{item}}"
+          state: directory
+        with_items:
+          - archives
+          - Prometheus
+      - name: Download Prometheus tar file
+        become: True
+        get_url:
+          url: "https://github.com/prometheus/prometheus/releases/download/v{{PROM_VERSION}}/prometheus-{{PROM_VERSION}}.linux-amd64.tar.gz"
+          dest: /opt/archives
+      - name: untar the file
+        become: True
+        unarchive:
+          dest: /opt/Prometheus
+          remote_src: True
+          src: "/opt/archives/prometheus-{{PROM_VERSION}}.linux-amd64.tar.gz"
