@@ -69,11 +69,10 @@
           state: absent
         when: ins == "d"
       - name: update /etc/hosts with new ip
-      # FIXME This could create multiple trystack entries in /etc/hosts will be fixed soon.
         become: True
         lineinfile:
           dest: /etc/hosts
-          regexp: ".*{{ server_config.openstack.accessIPv4 }} trystack$"
+          regexp: ".* trystack$"
           line: "{{ server_config.openstack.accessIPv4 }} trystack"
           state: present
         when: ins == "c"
