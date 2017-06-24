@@ -1,0 +1,11 @@
+
+# Run prometheus
+
+start on startup
+
+chdir "/opt/Prometheus/prometheus-{{PROM_VERSION}}.linux-amd64"
+console log
+
+script
+   ./prometheus --config.file "/opt/Prometheus/prometheus-{{PROM_VERSION}}.linux-amd64/prometheus.yml" --web.listen-address="0.0.0.0:{{PROM_BIND_PORT}}"
+end script

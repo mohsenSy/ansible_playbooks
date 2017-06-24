@@ -1,0 +1,8 @@
+# Run prometheus node_exporter
+
+start on startup
+console log
+
+script
+   "/opt/Prometheus/node_exporter-{{NODE_EXPORTER_VERSION}}.linux-amd64/node_exporter"
+end script

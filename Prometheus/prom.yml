@@ -3,10 +3,22 @@
     gather_facts: False
 
     vars:
-      - PROM_VERSION: 1.7.1
+      - PROM_VERSION: 2.0.0-alpha.3
+      - NODE_EXPORTER_VERSION: 0.14.0
+      - PROM_BIND_PORT: 9091
+
+    handlers:
+      - name: restart prometheus
+        service:
+          name: prometheus
+          state: restarted
+      - name: restart node_exporter
+        service:
+          name: node_exporter
+          state: restarted
 
     tasks:
-      - name: Create dir for downloaded file and prometheus
+      - name: Create dir for downloaded files and prometheus and PromDash
         become: True
         file:
           name: "/opt/{{item}}"
@@ -14,6 +26,8 @@
         with_items:
           - archives
           - Prometheus
+          - PromDash
+          - Prometheus/databases
       - name: Download Prometheus tar file
         become: True
         get_url:
@@ -25,3 +39,89 @@
           dest: /opt/Prometheus
           remote_src: True
           src: "/opt/archives/prometheus-{{PROM_VERSION}}.linux-amd64.tar.gz"
+          exclude: "prometheus.yml"
+      - name: Download node_exporter tar file
+        become: True
+        get_url:
+          url: "https://github.com/prometheus/node_exporter/releases/download/v{{NODE_EXPORTER_VERSION}}/node_exporter-{{NODE_EXPORTER_VERSION}}.linux-amd64.tar.gz"
+          dest: /opt/archives
+      - name: untar node_exporter file
+        become: True
+        unarchive:
+          dest: /opt/Prometheus
+          remote_src: True
+          src: "/opt/archives/node_exporter-{{NODE_EXPORTER_VERSION}}.linux-amd64.tar.gz"
+        notify: restart node_exporter
+      - name: create prometheus and node_exporter upstart init files
+        become: True
+        template:
+          src: "{{item}}.j2"
+          dest: "/etc/init/{{item}}"
+          owner: root
+          group: root
+          mode: 0644
+        with_items:
+          - prometheus.conf
+          - node_exporter.conf
+      - name: Update prometheus config file
+        become: True
+        template:
+          src: prometheus.yml.j2
+          dest: "/opt/Prometheus/prometheus-{{PROM_VERSION}}.linux-amd64/prometheus.yml"
+        notify: restart prometheus
+
+      - name: Install promdash dependencies
+        become: True
+        apt:
+          name: "{{ item }}"
+          state: present
+        with_items:
+          - git
+          - ruby
+          - bundler
+          - libsqlite3-dev
+          - zlib1g-dev
+          - sqlite3
+
+      - name: Clone PromDash repo
+        become: True
+        git:
+          repo: https://github.com/prometheus/promdash.git
+          dest: /opt/PromDash
+          force: yes
+      - name: Install ruby gems for PromDash
+        become: True
+        bundler:
+          state: present
+          chdir: /opt/PromDash
+          extra_args: "--without mysql postgresql"
+
+      - name: Add database url to .bashrc
+        become: True
+        lineinfile:
+          path: /root/.bashrc
+          line: export DATABASE_URL=sqlite3:/opt/Prometheus/databases/mydb.sqlite3
+          state: present
+          regexp: "^export DATABASE_URL=sqlite3:/opt/Prometheus/databases/mydb.sqlite3$"
+      - name: Add rails env to .bashrc
+        become: True
+        lineinfile:
+          path: /root/.bashrc
+          line: export RAILS_ENV=production
+          state: present
+          regexp: export RAILS_ENV=production
+      - name: Run db migrations
+        become: True
+        shell: >
+          DATABASE_URL=sqlite3:/opt/Prometheus/databases/mydb.sqlite3 RAILS_ENV=production rake db:migrate
+          chdir="/opt/PromDash"
+        register: db_migrate
+        changed_when: db_migrate.stdout != ""
+
+      - name: Run assets precompile
+        become: True
+        shell: >
+          DATABASE_URL=sqlite3:/opt/Prometheus/databases/mydb.sqlite3 RAILS_ENV=production rake assets:precompile
+          chdir="/opt/PromDash"
+        register: assets_precompile
+        changed_when: assets_precompile.stdout != ""
